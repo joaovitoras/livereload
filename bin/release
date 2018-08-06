@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -e
+
+CUR_DIR=$(pwd)
+USER=ubuntu
+PORT=8080
+host=$DEPLOY_HOST
+app=livereload
+release_file=$app.tar.gz
+echo $host
+# build docker from Dockerfile and tag to livereload-release-builder
+docker build -t livereload-release-builder .
+RELEASE_VERSION_FILE="_build/prod/rel/$app/releases/start_erl.data"
+
+if [ -f $RELEASE_VERSION_FILE ]; then
+  LAST_APP_VERSION=`cat $RELEASE_VERSION_FILE | cut -d' ' -f2`
+
+  if [ $LAST_APP_VERSION != $APP_VERSION ]; then
+    UPDATE="--upgrade --upfrom=$LAST_APP_VERSION"
+    echo "Building upgrate from $LAST_APP_VERSION to $APP_VERSION"
+  fi
+fi
+
+# Run mix release with build volume path from app
+# and remove image after run
+mkdir -p $CUR_DIR/tmp/packages/hex
+
+docker run \
+  -v $CUR_DIR/_build/prod:/app/_build/prod \
+  -v $CUR_DIR/tmp/packages/hex:/root/.hex/packages \
+  --env APP_VERSION=$APP_VERSION \
+  --env MIX_ENV=prod \
+  --rm \
+  livereload-release-builder mix release $UPDATE
+
+RELEASE=$CUR_DIR/_build/prod/rel/$app/releases/$APP_VERSION/$release_file
+
+if [ -n $APP_DEPLOY_KEY ]; then
+  echo "Uploading release to production..."
+
+  scp -o StrictHostKeyChecking=no -i $APP_DEPLOY_KEY $RELEASE $USER@$host:~/$release_file
+  ssh -o StrictHostKeyChecking=no -T -i $APP_DEPLOY_KEY $USER@$host\
+<< EOSSH
+  set -xe
+
+  if [[ -n "$UPDATE" ]]; then
+    sudo mkdir -p /app/releases/$APP_VERSION
+    sudo mv ~/$release_file /app/releases/$APP_VERSION
+    sudo PORT=$PORT /app/bin/$app upgrade $APP_VERSION
+  else
+    sudo mkdir -p /app
+    sudo tar -C /app -zxf ~/$release_file
+    sudo PORT=$PORT /app/bin/$app start
+  fi
+
+  sudo rm -rf ~/$release_file
+
+  # Delete old deploys
+  sudo bash -c "ls -d -1 /app/releases/*/ | sort -r | head -n -4 | xargs rm -rf"
+
+  echo 'All deployed!'
+EOSSH
+fi
