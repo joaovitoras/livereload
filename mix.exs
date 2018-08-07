@@ -42,11 +42,3 @@ defmodule Livereload.Mixfile do
     ]
   end
 end
-
-# MIX_ENV=prod mix compile
-# MIX_ENV=prod mix release
-# PORT=4000 _build/prod/rel/livereload/bin/livereload start
-# APP_VERSION=0.0.2 MIX_ENV=prod mix compile --force
-# MIX_ENV=prod mix release --upgrade
-# PORT=4000 _build/prod/rel/livereload/bin/livereload upgrade 0.2.2
-
